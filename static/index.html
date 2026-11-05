@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Snake Game - Go Edition</title>
+<style>
+    body {
+        background: #1a1a2e;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        font-family: Arial, sans-serif;
+        color: white;
+        margin-top: 30px;
+    }
+    h1 { color: #4ade80; }
+    canvas {
+        background: #0f0f1e;
+        border: 3px solid #4ade80;
+        border-radius: 8px;
+    }
+    #score {
+        font-size: 22px;
+        margin-bottom: 10px;
+    }
+    #status {
+        margin-top: 10px;
+        font-size: 16px;
+        color: #aaa;
+    }
+    #leaderboard {
+        margin-top: 25px;
+        background: #16213e;
+        padding: 15px 25px;
+        border-radius: 8px;
+        min-width: 250px;
+    }
+    #leaderboard h2 {
+        margin-top: 0;
+        font-size: 18px;
+        color: #4ade80;
+        text-align: center;
+    }
+    #leaderboard-list {
+        padding-left: 20px;
+        margin: 0;
+    }
+    #leaderboard-list li {
+        padding: 3px 0;
+    }
+</style>
+</head>
+<body>
+
+<h1>🐍 Snake Game</h1>
+<div id="score">Skor: 0</div>
+<canvas id="gameCanvas" width="400" height="400"></canvas>
+<div id="status">Tekan tombol panah / WASD untuk mulai gerak. Tekan Spasi untuk restart.</div>
+
+<div id="leaderboard">
+    <h2>🏆 Leaderboard</h2>
+    <ol id="leaderboard-list"><li>Memuat...</li></ol>
+</div>
+
+<script>
+// ==== KONFIGURASI ====
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const box = 20; // ukuran satu kotak grid
+const gridSize = canvas.width / box; // 20x20 grid
+
+// ==== STATE GAME ====
+let snake = [{ x: 10, y: 10 }]; // mulai di tengah
+let direction = null;
+let nextDirection = null;
+let food = randomFoodPosition();
+let score = 0;
+let gameOver = false;
+let speed = 150; // ms per langkah, makin kecil makin cepat
+let gameLoop = null;
+
+function randomFoodPosition() {
+    return {
+        x: Math.floor(Math.random() * gridSize),
+        y: Math.floor(Math.random() * gridSize)
+    };
+}
+
+// ==== INPUT KEYBOARD ====
+document.addEventListener("keydown", (e) => {
+    const key = e.key.toLowerCase();
+
+    if (gameOver && key === " ") {
+        restartGame();
+        return;
+    }
+
+    if (key === "arrowup" || key === "w") {
+        if (direction !== "down") nextDirection = "up";
+    } else if (key === "arrowdown" || key === "s") {
+        if (direction !== "up") nextDirection = "down";
+    } else if (key === "arrowleft" || key === "a") {
+        if (direction !== "right") nextDirection = "left";
+    } else if (key === "arrowright" || key === "d") {
+        if (direction !== "left") nextDirection = "right";
+    }
+});
+
+// ==== LOGIKA UTAMA GAME ====
+function update() {
+    if (gameOver) return;
+    if (nextDirection) direction = nextDirection;
+    if (!direction) return; // belum mulai gerak
+
+    const head = { ...snake[0] };
+
+    if (direction === "up") head.y -= 1;
+    else if (direction === "down") head.y += 1;
+    else if (direction === "left") head.x -= 1;
+    else if (direction === "right") head.x += 1;
+
+    // Cek nabrak dinding
+    if (head.x < 0 || head.x >= gridSize || head.y < 0 || head.y >= gridSize) {
+        return endGame();
+    }
+
+    // Cek nabrak badan sendiri
+    for (const segment of snake) {
+        if (segment.x === head.x && segment.y === head.y) {
+            return endGame();
+        }
+    }
+
+    snake.unshift(head); // tambah kepala baru di depan
+
+    // Cek makan makanan
+    if (head.x === food.x && head.y === food.y) {
+        score += 10;
+        document.getElementById("score").innerText = "Skor: " + score;
+        food = randomFoodPosition();
+    } else {
+        snake.pop(); // buang ekor kalau tidak makan (biar panjang tetap)
+    }
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Gambar makanan
+    ctx.fillStyle = "#f87171";
+    ctx.fillRect(food.x * box, food.y * box, box - 1, box - 1);
+
+    // Gambar ular
+    snake.forEach((segment, index) => {
+        ctx.fillStyle = index === 0 ? "#4ade80" : "#22c55e";
+        ctx.fillRect(segment.x * box, segment.y * box, box - 1, box - 1);
+    });
+
+    if (gameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.font = "24px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("Game Over!", canvas.width / 2, canvas.height / 2 - 10);
+        ctx.font = "16px Arial";
+        ctx.fillText("Tekan Spasi untuk main lagi", canvas.width / 2, canvas.height / 2 + 20);
+    }
+}
+
+function endGame() {
+    gameOver = true;
+    document.getElementById("status").innerText = "Game selesai dengan skor " + score;
+
+    // Minta nama pemain, lalu kirim skor ke server
+    const name = prompt("Game Over! Masukkan nama kamu untuk leaderboard:", "Player");
+    submitScore(name && name.trim() !== "" ? name.trim() : "Anonim", score);
+}
+
+// ==== LEADERBOARD (Fetch API ke server Go) ====
+
+async function submitScore(playerName, finalScore) {
+    try {
+        await fetch("/api/score", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ player_name: playerName, score: finalScore })
+        });
+    } catch (err) {
+        console.error("Gagal simpan skor:", err);
+    }
+    loadLeaderboard(); // refresh tampilan setelah skor tersimpan
+}
+
+async function loadLeaderboard() {
+    const list = document.getElementById("leaderboard-list");
+    try {
+        const res = await fetch("/api/leaderboard");
+        const data = await res.json();
+
+        list.innerHTML = ""; // kosongkan dulu
+
+        if (!data || data.length === 0) {
+            list.innerHTML = "<li>Belum ada skor.</li>";
+            return;
+        }
+
+        data.forEach((entry) => {
+            const li = document.createElement("li");
+            li.textContent = entry.player_name + " — " + entry.score;
+            list.appendChild(li);
+        });
+    } catch (err) {
+        console.error("Gagal ambil leaderboard:", err);
+        list.innerHTML = "<li>Gagal memuat leaderboard.</li>";
+    }
+}
+
+function restartGame() {
+    snake = [{ x: 10, y: 10 }];
+    direction = null;
+    nextDirection = null;
+    food = randomFoodPosition();
+    score = 0;
+    gameOver = false;
+    document.getElementById("score").innerText = "Skor: 0";
+    document.getElementById("status").innerText = "Tekan tombol panah / WASD untuk mulai gerak.";
+}
+
+// ==== GAME LOOP ====
+function tick() {
+    update();
+    draw();
+}
+
+gameLoop = setInterval(tick, speed);
+draw(); // gambar posisi awal
+loadLeaderboard(); // tampilkan leaderboard begitu halaman dibuka
+</script>
+
+</body>
+</html>
