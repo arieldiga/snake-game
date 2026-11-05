@@ -77,18 +77,34 @@ let food = randomFoodPosition();
 let score = 0;
 let gameOver = false;
 let speed = 150; // ms per langkah, makin kecil makin cepat
-let gameLoop = null;
+let paused = false;
+let highScore = Number(localStorage.getItem("snakeHighScore")) || 0;
+const BASE_SPEED = 150, MIN_SPEED = 60;
 
 function randomFoodPosition() {
-    return {
-        x: Math.floor(Math.random() * gridSize),
-        y: Math.floor(Math.random() * gridSize)
-    };
+    let pos;
+    do {
+        pos = {
+            x: Math.floor(Math.random() * gridSize),
+            y: Math.floor(Math.random() * gridSize)
+        };
+    } while (snake.some(s => s.x === pos.x && s.y === pos.y)); // ulangi jika kena ular
+    return pos;
 }
 
 // ==== INPUT KEYBOARD ====
 document.addEventListener("keydown", (e) => {
     const key = e.key.toLowerCase();
+
+    if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) {
+        e.preventDefault(); // cegah halaman ikut scroll
+    }
+    if (key === "p" && !gameOver && direction) {
+        paused = !paused;
+        document.getElementById("status").innerText = paused ? "Dijeda. Tekan P untuk lanjut." : "";
+        draw();
+        return;
+    }
 
     if (gameOver && key === " ") {
         restartGame();
@@ -136,11 +152,21 @@ function update() {
     // Cek makan makanan
     if (head.x === food.x && head.y === food.y) {
         score += 10;
-        document.getElementById("score").innerText = "Skor: " + score;
+        updateScoreText();
         food = randomFoodPosition();
+        speed = Math.max(MIN_SPEED, BASE_SPEED - Math.floor(score / 50) * 10); // makin cepat tiap 50 poin
+        if (score > highScore) {
+            highScore = score;
+            localStorage.setItem("snakeHighScore", highScore);
+            updateScoreText();
+        }
     } else {
         snake.pop(); // buang ekor kalau tidak makan (biar panjang tetap)
     }
+}
+
+function updateScoreText() {
+    document.getElementById("score").innerText = "Skor: " + score + "  |  Terbaik: " + highScore;
 }
 
 function draw() {
@@ -155,6 +181,15 @@ function draw() {
         ctx.fillStyle = index === 0 ? "#4ade80" : "#22c55e";
         ctx.fillRect(segment.x * box, segment.y * box, box - 1, box - 1);
     });
+
+    if (paused) {
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.font = "24px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("Dijeda", canvas.width / 2, canvas.height / 2);
+    }
 
     if (gameOver) {
         ctx.fillStyle = "rgba(0,0,0,0.6)";
@@ -171,21 +206,27 @@ function draw() {
 function endGame() {
     gameOver = true;
     document.getElementById("status").innerText = "Game selesai dengan skor " + score;
+    draw(); // tampilkan layar Game Over sebelum prompt muncul
+    if (score === 0) return; // skor 0 tidak perlu masuk leaderboard
 
-    // Minta nama pemain, lalu kirim skor ke server
-    const name = prompt("Game Over! Masukkan nama kamu untuk leaderboard:", "Player");
-    submitScore(name && name.trim() !== "" ? name.trim() : "Anonim", score);
+    // setTimeout memberi browser waktu menggambar layar Game Over dulu
+    setTimeout(() => {
+        const name = prompt("Game Over! Masukkan nama kamu untuk leaderboard:", "Player");
+        if (name === null) return; // tekan Batal = jangan simpan
+        submitScore(name.trim().slice(0, 20) || "Anonim", score);
+    }, 50);
 }
 
 // ==== LEADERBOARD (Fetch API ke server Go) ====
 
 async function submitScore(playerName, finalScore) {
     try {
-        await fetch("/api/score", {
+        const res = await fetch("/api/score", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ player_name: playerName, score: finalScore })
         });
+        if (!res.ok) console.error("Server menolak skor:", await res.text());
     } catch (err) {
         console.error("Gagal simpan skor:", err);
     }
@@ -223,18 +264,23 @@ function restartGame() {
     food = randomFoodPosition();
     score = 0;
     gameOver = false;
-    document.getElementById("score").innerText = "Skor: 0";
+    paused = false;
+    speed = BASE_SPEED;
+    updateScoreText();
     document.getElementById("status").innerText = "Tekan tombol panah / WASD untuk mulai gerak.";
 }
 
 // ==== GAME LOOP ====
 function tick() {
-    update();
-    draw();
+    if (!paused) {
+        update();
+        draw();
+    }
+    setTimeout(tick, speed); // jadwalkan langkah berikutnya dengan speed terbaru
 }
 
-gameLoop = setInterval(tick, speed);
-draw(); // gambar posisi awal
+updateScoreText();
+tick();
 loadLeaderboard(); // tampilkan leaderboard begitu halaman dibuka
 </script>
 
