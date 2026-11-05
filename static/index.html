@@ -2,6 +2,7 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Snake Game - Go Edition</title>
 <style>
     body {
@@ -19,6 +20,41 @@
         border: 3px solid #4ade80;
         border-radius: 8px;
     }
+    canvas { max-width: 92vw; height: auto; touch-action: none; }
+    .mobile-controls {
+        display: none;               /* disembunyikan di desktop */
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+        margin-top: 16px;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+    }
+    /* Tampil hanya di perangkat layar sentuh (HP/tablet) */
+    @media (hover: none) and (pointer: coarse) {
+        .mobile-controls { display: flex; }
+    }
+    .dpad {
+        display: grid;
+        grid-template-columns: repeat(3, 72px);
+        grid-template-rows: repeat(2, 72px);
+        grid-template-areas: ". up ." "left down right";
+        gap: 8px;
+    }
+    .dpad button, .extra button {
+        background: #16213e;
+        color: #4ade80;
+        border: 2px solid #4ade80;
+        border-radius: 12px;
+        font-size: 28px;
+        touch-action: manipulation;
+    }
+    .dpad button:active, .extra button:active { background: #4ade80; color: #0f0f1e; }
+    .extra { display: flex; gap: 12px; }
+    .extra button { font-size: 16px; padding: 12px 20px; }
+    #btn-up { grid-area: up; } #btn-down { grid-area: down; }
+    #btn-left { grid-area: left; } #btn-right { grid-area: right; }
     #score {
         font-size: 22px;
         margin-bottom: 10px;
@@ -55,7 +91,20 @@
 <h1>🐍 Snake Game</h1>
 <div id="score">Skor: 0</div>
 <canvas id="gameCanvas" width="400" height="400"></canvas>
-<div id="status">Tekan tombol panah / WASD untuk mulai gerak. Tekan Spasi untuk restart.</div>
+<div id="status"></div>
+
+<div class="mobile-controls">
+    <div class="dpad">
+        <button id="btn-up" aria-label="Atas">▲</button>
+        <button id="btn-left" aria-label="Kiri">◀</button>
+        <button id="btn-down" aria-label="Bawah">▼</button>
+        <button id="btn-right" aria-label="Kanan">▶</button>
+    </div>
+    <div class="extra">
+        <button id="btn-pause">⏸ Jeda</button>
+        <button id="btn-restart">🔄 Main Lagi</button>
+    </div>
+</div>
 
 <div id="leaderboard">
     <h2>🏆 Leaderboard</h2>
@@ -66,6 +115,10 @@
 // ==== KONFIGURASI ====
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
+const isTouch = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+const START_HINT = isTouch
+    ? "Tekan tombol panah di bawah untuk mulai bergerak."
+    : "Tekan tombol panah / WASD untuk mulai gerak. Tekan Spasi untuk restart.";
 const box = 20; // ukuran satu kotak grid
 const gridSize = canvas.width / box; // 20x20 grid
 
@@ -99,10 +152,8 @@ document.addEventListener("keydown", (e) => {
     if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) {
         e.preventDefault(); // cegah halaman ikut scroll
     }
-    if (key === "p" && !gameOver && direction) {
-        paused = !paused;
-        document.getElementById("status").innerText = paused ? "Dijeda. Tekan P untuk lanjut." : "";
-        draw();
+    if (key === "p") {
+        togglePause();
         return;
     }
 
@@ -111,16 +162,38 @@ document.addEventListener("keydown", (e) => {
         return;
     }
 
-    if (key === "arrowup" || key === "w") {
-        if (direction !== "down") nextDirection = "up";
-    } else if (key === "arrowdown" || key === "s") {
-        if (direction !== "up") nextDirection = "down";
-    } else if (key === "arrowleft" || key === "a") {
-        if (direction !== "right") nextDirection = "left";
-    } else if (key === "arrowright" || key === "d") {
-        if (direction !== "left") nextDirection = "right";
-    }
+    if (key === "arrowup" || key === "w") changeDirection("up");
+    else if (key === "arrowdown" || key === "s") changeDirection("down");
+    else if (key === "arrowleft" || key === "a") changeDirection("left");
+    else if (key === "arrowright" || key === "d") changeDirection("right");
 });
+
+// Ganti arah, tapi tidak boleh langsung berbalik 180 derajat
+const opposite = { up: "down", down: "up", left: "right", right: "left" };
+function changeDirection(dir) {
+    if (direction !== opposite[dir]) nextDirection = dir;
+}
+
+function togglePause() {
+    if (gameOver || !direction) return;
+    paused = !paused;
+    document.getElementById("status").innerText = paused
+        ? (isTouch ? "Dijeda. Ketuk Jeda untuk lanjut." : "Dijeda. Tekan P untuk lanjut.")
+        : "";
+    draw();
+}
+
+// ==== TOMBOL LAYAR SENTUH ====
+// pointerdown = bereaksi saat jari menyentuh layar (lebih cepat dari click)
+[["btn-up", "up"], ["btn-down", "down"], ["btn-left", "left"], ["btn-right", "right"]]
+    .forEach(([id, dir]) => {
+        document.getElementById(id).addEventListener("pointerdown", (e) => {
+            e.preventDefault();
+            changeDirection(dir);
+        });
+    });
+document.getElementById("btn-pause").addEventListener("click", togglePause);
+document.getElementById("btn-restart").addEventListener("click", restartGame);
 
 // ==== LOGIKA UTAMA GAME ====
 function update() {
@@ -199,7 +272,7 @@ function draw() {
         ctx.textAlign = "center";
         ctx.fillText("Game Over!", canvas.width / 2, canvas.height / 2 - 10);
         ctx.font = "16px Arial";
-        ctx.fillText("Tekan Spasi untuk main lagi", canvas.width / 2, canvas.height / 2 + 20);
+        ctx.fillText(isTouch ? "Ketuk Main Lagi di bawah" : "Tekan Spasi untuk main lagi", canvas.width / 2, canvas.height / 2 + 20);
     }
 }
 
@@ -267,7 +340,7 @@ function restartGame() {
     paused = false;
     speed = BASE_SPEED;
     updateScoreText();
-    document.getElementById("status").innerText = "Tekan tombol panah / WASD untuk mulai gerak.";
+    document.getElementById("status").innerText = START_HINT;
 }
 
 // ==== GAME LOOP ====
@@ -279,6 +352,7 @@ function tick() {
     setTimeout(tick, speed); // jadwalkan langkah berikutnya dengan speed terbaru
 }
 
+document.getElementById("status").innerText = START_HINT;
 updateScoreText();
 tick();
 loadLeaderboard(); // tampilkan leaderboard begitu halaman dibuka
