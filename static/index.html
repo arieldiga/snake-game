@@ -5,92 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Snake Game - Go Edition</title>
 <style>
-    body {
-        background: #1a1a2e;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        font-family: Arial, sans-serif;
-        color: white;
-        margin-top: 30px;
-    }
-    h1 { color: #4ade80; }
-    canvas {
-        background: #0f0f1e;
-        border: 3px solid #4ade80;
-        border-radius: 8px;
-    }
-    canvas { max-width: 92vw; height: auto; touch-action: none; }
-    .mobile-controls {
-        display: none;               /* disembunyikan di desktop */
-        flex-direction: column;
-        align-items: center;
-        gap: 14px;
-        margin-top: 16px;
-        user-select: none;
-        -webkit-user-select: none;
-        -webkit-touch-callout: none;
-    }
-    /* Tampil hanya di perangkat layar sentuh (HP/tablet) */
-    @media (hover: none) and (pointer: coarse) {
-        .mobile-controls { display: flex; }
-    }
-    .dpad {
-        display: grid;
-        grid-template-columns: repeat(3, 72px);
-        grid-template-rows: repeat(2, 72px);
-        grid-template-areas: ". up ." "left down right";
-        gap: 8px;
-    }
-    .dpad button, .extra button {
-        background: #16213e;
-        color: #4ade80;
-        border: 2px solid #4ade80;
-        border-radius: 12px;
-        font-size: 28px;
-        touch-action: manipulation;
-    }
-    .dpad button:active, .extra button:active { background: #4ade80; color: #0f0f1e; }
-    .extra { display: flex; gap: 12px; }
-    .extra button { font-size: 16px; padding: 12px 20px; }
-    #btn-up { grid-area: up; } #btn-down { grid-area: down; }
-    #btn-left { grid-area: left; } #btn-right { grid-area: right; }
-    #score {
-        font-size: 22px;
-        margin-bottom: 10px;
-    }
-    #status {
-        margin-top: 10px;
-        font-size: 16px;
-        color: #aaa;
-    }
-    #leaderboard {
-        margin-top: 25px;
-        background: #16213e;
-        padding: 15px 25px;
-        border-radius: 8px;
-        min-width: 250px;
-    }
-    #leaderboard h2 {
-        margin-top: 0;
-        font-size: 18px;
-        color: #4ade80;
-        text-align: center;
-    }
-    #leaderboard-list {
-        padding-left: 20px;
-        margin: 0;
-    }
-    #leaderboard-list li {
-        padding: 3px 0;
-    }
+    body { background:#1a1a2e; display:flex; flex-direction:column; align-items:center;
+           font-family:Arial,sans-serif; color:white; margin-top:30px; }
+    h1 { color:#4ade80; }
+    canvas { width:400px; max-width:92vw; aspect-ratio:1/1; background:#0f0f1e;
+             border:3px solid #4ade80; border-radius:8px; touch-action:none; }
+    #score { font-size:22px; margin-bottom:10px; }
+    #status { margin-top:10px; font-size:16px; color:#aaa; min-height:20px; text-align:center; padding:0 10px; }
+    #leaderboard { margin:25px 0; background:#16213e; padding:15px 25px; border-radius:8px; min-width:250px; }
+    #leaderboard h2 { margin-top:0; font-size:18px; color:#4ade80; text-align:center; }
+    #leaderboard-list { padding-left:20px; margin:0; }
+    #leaderboard-list li { padding:3px 0; }
+    .mobile-controls { display:none; flex-direction:column; align-items:center; gap:14px; margin-top:16px;
+        user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+    @media (hover:none) and (pointer:coarse) { .mobile-controls { display:flex; } }
+    .dpad { display:grid; grid-template-columns:repeat(3,72px); grid-template-rows:repeat(2,72px);
+            grid-template-areas:". up ." "left down right"; gap:8px; }
+    .dpad button, .extra button { background:#16213e; color:#4ade80; border:2px solid #4ade80;
+        border-radius:12px; font-size:28px; touch-action:manipulation; }
+    .dpad button:active, .extra button:active { background:#4ade80; color:#0f0f1e; }
+    .extra { display:flex; gap:12px; }
+    .extra button { font-size:16px; padding:12px 20px; }
+    #btn-up{grid-area:up} #btn-down{grid-area:down} #btn-left{grid-area:left} #btn-right{grid-area:right}
 </style>
 </head>
 <body>
 
 <h1>🐍 Snake Game</h1>
 <div id="score">Skor: 0</div>
-<canvas id="gameCanvas" width="400" height="400"></canvas>
+<canvas id="gameCanvas"></canvas>
 <div id="status"></div>
 
 <div class="mobile-controls">
@@ -113,54 +56,68 @@
 
 <script>
 // ==== KONFIGURASI ====
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
+const SIZE = 400, GRID = 20, CELL = SIZE / GRID;
+const BASE_SPEED = 150, MIN_SPEED = 60;   // ms per langkah ular
 const isTouch = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 const START_HINT = isTouch
     ? "Tekan tombol panah di bawah untuk mulai bergerak."
     : "Tekan tombol panah / WASD untuk mulai gerak. Tekan Spasi untuk restart.";
-const box = 20; // ukuran satu kotak grid
-const gridSize = canvas.width / box; // 20x20 grid
+
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+// Resolusi dikali devicePixelRatio supaya gambar tajam di layar HP/retina
+const dpr = window.devicePixelRatio || 1;
+canvas.width = SIZE * dpr;
+canvas.height = SIZE * dpr;
+ctx.scale(dpr, dpr);
 
 // ==== STATE GAME ====
-let snake = [{ x: 10, y: 10 }]; // mulai di tengah
-let direction = null;
-let nextDirection = null;
-let food = randomFoodPosition();
-let score = 0;
-let gameOver = false;
-let speed = 150; // ms per langkah, makin kecil makin cepat
-let paused = false;
+let snake, prevSnake, direction, food, foodBornAt, score, gameOver, paused, speed, acc;
+const dirQueue = [];   // antrean belokan (maks 2) agar input cepat tidak hilang
 let highScore = Number(localStorage.getItem("snakeHighScore")) || 0;
-const BASE_SPEED = 150, MIN_SPEED = 60;
+const opposite = { up: "down", down: "up", left: "right", right: "left" };
+const ANGLE = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
+
+function resetState() {
+    snake = [{ x: 10, y: 10 }];
+    prevSnake = snake.map(s => ({ ...s }));
+    direction = null;
+    dirQueue.length = 0;
+    score = 0; gameOver = false; paused = false;
+    speed = BASE_SPEED; acc = 0;
+    food = randomFoodPosition();
+    foodBornAt = performance.now();
+}
 
 function randomFoodPosition() {
     let pos;
     do {
-        pos = {
-            x: Math.floor(Math.random() * gridSize),
-            y: Math.floor(Math.random() * gridSize)
-        };
-    } while (snake.some(s => s.x === pos.x && s.y === pos.y)); // ulangi jika kena ular
+        pos = { x: Math.floor(Math.random() * GRID), y: Math.floor(Math.random() * GRID) };
+    } while (snake.some(s => s.x === pos.x && s.y === pos.y));
     return pos;
 }
 
-// ==== INPUT KEYBOARD ====
+const started = () => direction !== null || dirQueue.length > 0;
+
+// ==== INPUT ====
+function changeDirection(dir) {
+    const last = dirQueue.length ? dirQueue[dirQueue.length - 1] : direction;
+    if (dir === last || dir === opposite[last]) return;   // abaikan arah sama / berbalik
+    if (dirQueue.length < 2) dirQueue.push(dir);
+}
+
+function togglePause() {
+    if (gameOver || !started()) return;
+    paused = !paused;
+    document.getElementById("status").innerText = paused
+        ? (isTouch ? "Dijeda. Ketuk Jeda untuk lanjut." : "Dijeda. Tekan P untuk lanjut.") : "";
+}
+
 document.addEventListener("keydown", (e) => {
     const key = e.key.toLowerCase();
-
-    if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) {
-        e.preventDefault(); // cegah halaman ikut scroll
-    }
-    if (key === "p") {
-        togglePause();
-        return;
-    }
-
-    if (gameOver && key === " ") {
-        restartGame();
-        return;
-    }
+    if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) e.preventDefault();
+    if (key === "p") return togglePause();
+    if (gameOver && key === " ") return restartGame();
 
     if (key === "arrowup" || key === "w") changeDirection("up");
     else if (key === "arrowdown" || key === "s") changeDirection("down");
@@ -168,23 +125,6 @@ document.addEventListener("keydown", (e) => {
     else if (key === "arrowright" || key === "d") changeDirection("right");
 });
 
-// Ganti arah, tapi tidak boleh langsung berbalik 180 derajat
-const opposite = { up: "down", down: "up", left: "right", right: "left" };
-function changeDirection(dir) {
-    if (direction !== opposite[dir]) nextDirection = dir;
-}
-
-function togglePause() {
-    if (gameOver || !direction) return;
-    paused = !paused;
-    document.getElementById("status").innerText = paused
-        ? (isTouch ? "Dijeda. Ketuk Jeda untuk lanjut." : "Dijeda. Tekan P untuk lanjut.")
-        : "";
-    draw();
-}
-
-// ==== TOMBOL LAYAR SENTUH ====
-// pointerdown = bereaksi saat jari menyentuh layar (lebih cepat dari click)
 [["btn-up", "up"], ["btn-down", "down"], ["btn-left", "left"], ["btn-right", "right"]]
     .forEach(([id, dir]) => {
         document.getElementById(id).addEventListener("pointerdown", (e) => {
@@ -194,104 +134,224 @@ function togglePause() {
     });
 document.getElementById("btn-pause").addEventListener("click", togglePause);
 document.getElementById("btn-restart").addEventListener("click", restartGame);
+// Otomatis jeda kalau tab disembunyikan / pindah aplikasi
+document.addEventListener("visibilitychange", () => { if (document.hidden && !paused) togglePause(); });
 
-// ==== LOGIKA UTAMA GAME ====
-function update() {
-    if (gameOver) return;
-    if (nextDirection) direction = nextDirection;
-    if (!direction) return; // belum mulai gerak
+// ==== LOGIKA: dijalankan per "langkah" (tiap `speed` ms) ====
+function step() {
+    if (dirQueue.length) direction = dirQueue.shift();
+    if (!direction) return;
 
     const head = { ...snake[0] };
+    if (direction === "up") head.y--;
+    else if (direction === "down") head.y++;
+    else if (direction === "left") head.x--;
+    else head.x++;
 
-    if (direction === "up") head.y -= 1;
-    else if (direction === "down") head.y += 1;
-    else if (direction === "left") head.x -= 1;
-    else if (direction === "right") head.x += 1;
+    if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID) return endGame();
 
-    // Cek nabrak dinding
-    if (head.x < 0 || head.x >= gridSize || head.y < 0 || head.y >= gridSize) {
-        return endGame();
-    }
+    const eating = head.x === food.x && head.y === food.y;
+    // Kalau tidak makan, ekor akan bergeser, jadi boleh masuk ke kotak ekor
+    const body = eating ? snake : snake.slice(0, -1);
+    if (body.some(s => s.x === head.x && s.y === head.y)) return endGame();
 
-    // Cek nabrak badan sendiri
-    for (const segment of snake) {
-        if (segment.x === head.x && segment.y === head.y) {
-            return endGame();
-        }
-    }
+    const old = snake;
+    snake = [head, ...old];
+    if (!eating) snake.pop();
+    // Posisi sebelumnya tiap ruas, dipakai untuk gerakan halus antar langkah
+    prevSnake = snake.map((s, i) => old[i] ? { ...old[i] } : { ...s });
 
-    snake.unshift(head); // tambah kepala baru di depan
-
-    // Cek makan makanan
-    if (head.x === food.x && head.y === food.y) {
+    if (eating) {
         score += 10;
-        updateScoreText();
-        food = randomFoodPosition();
-        speed = Math.max(MIN_SPEED, BASE_SPEED - Math.floor(score / 50) * 10); // makin cepat tiap 50 poin
+        speed = Math.max(MIN_SPEED, BASE_SPEED - Math.floor(score / 50) * 10);
         if (score > highScore) {
             highScore = score;
             localStorage.setItem("snakeHighScore", highScore);
-            updateScoreText();
         }
-    } else {
-        snake.pop(); // buang ekor kalau tidak makan (biar panjang tetap)
+        updateScoreText();
+        food = randomFoodPosition();
+        foodBornAt = performance.now();
     }
 }
 
+// ==== GAME LOOP 60 FPS ====
+// Logika berjalan per langkah, tetapi gambar diperbarui setiap frame layar (~60x/detik)
+// dengan interpolasi, sehingga gerakan ular terlihat mulus.
+let lastTime = performance.now();
+function frame(now) {
+    const dt = Math.min(Math.max(now - lastTime, 0), 100);
+    lastTime = now;
+    if (!paused && !gameOver && started()) {
+        acc += dt;
+        while (acc >= speed && !gameOver) { acc -= speed; step(); }
+    }
+    render(now);
+    requestAnimationFrame(frame);
+}
+
+// ==== GAMBAR ====
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function render(now) {
+    drawBoard();
+    drawApple(now);
+    drawSnake(gameOver ? 1 : Math.min(acc / speed, 1), now);
+
+    if (paused || gameOver) {
+        ctx.fillStyle = paused ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0.6)";
+        ctx.fillRect(0, 0, SIZE, SIZE);
+        ctx.fillStyle = "white";
+        ctx.textAlign = "center";
+        ctx.font = "24px Arial";
+        ctx.fillText(paused ? "Dijeda" : "Game Over!", SIZE / 2, SIZE / 2 - 10);
+        if (gameOver) {
+            ctx.font = "16px Arial";
+            ctx.fillText(isTouch ? "Ketuk Main Lagi di bawah" : "Tekan Spasi untuk main lagi", SIZE / 2, SIZE / 2 + 20);
+        }
+    }
+}
+
+function drawBoard() {
+    for (let y = 0; y < GRID; y++) {
+        for (let x = 0; x < GRID; x++) {
+            ctx.fillStyle = (x + y) % 2 ? "#12122a" : "#0f0f1e";
+            ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+        }
+    }
+}
+
+function drawApple(now) {
+    const age = Math.min(Math.max((now - foodBornAt) / 300, 0), 1);
+    const c1 = 1.70158, c3 = c1 + 1;
+    const pop = 1 + c3 * Math.pow(age - 1, 3) + c1 * Math.pow(age - 1, 2);   // efek "muncul membal"
+    const r = CELL * 0.44 * pop * (1 + 0.04 * Math.sin(now / 250));          // berdenyut pelan
+
+    ctx.save();
+    ctx.translate((food.x + 0.5) * CELL, (food.y + 0.5) * CELL + 1);
+
+    ctx.fillStyle = "rgba(0,0,0,0.3)";                                       // bayangan
+    ctx.beginPath(); ctx.ellipse(0, r * 0.95, r * 0.8, r * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.beginPath();                                                         // badan apel (ada lekukan atas & bawah)
+    ctx.moveTo(0, -r * 0.55);
+    ctx.bezierCurveTo(r * 0.2, -r * 0.95, r * 1.15, -r * 0.8, r, r * 0.1);
+    ctx.bezierCurveTo(r * 0.9, r * 0.8, r * 0.4, r * 1.05, 0, r * 0.85);
+    ctx.bezierCurveTo(-r * 0.4, r * 1.05, -r * 0.9, r * 0.8, -r, r * 0.1);
+    ctx.bezierCurveTo(-r * 1.15, -r * 0.8, -r * 0.2, -r * 0.95, 0, -r * 0.55);
+    ctx.closePath();
+    const g = ctx.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r * 1.2);
+    g.addColorStop(0, "#ff8a80"); g.addColorStop(0.45, "#ef4444"); g.addColorStop(1, "#991b1b");
+    ctx.fillStyle = g; ctx.fill();
+
+    ctx.fillStyle = "rgba(255,255,255,0.55)";                                // kilau
+    ctx.beginPath(); ctx.ellipse(-r * 0.45, -r * 0.3, r * 0.2, r * 0.12, -0.7, 0, Math.PI * 2); ctx.fill();
+
+    ctx.strokeStyle = "#78350f"; ctx.lineWidth = 1.6; ctx.lineCap = "round"; // tangkai
+    ctx.beginPath(); ctx.moveTo(0, -r * 0.45); ctx.quadraticCurveTo(r * 0.05, -r * 0.85, r * 0.15, -r * 1.05); ctx.stroke();
+
+    ctx.fillStyle = "#22c55e";                                               // daun
+    ctx.beginPath(); ctx.ellipse(r * 0.5, -r * 0.9, r * 0.4, r * 0.18, -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+}
+
+// Titik-titik ruas dihaluskan dengan kurva supaya tikungan ular melengkung
+function smoothPath(P) {
+    if (P.length < 3) return P;
+    const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    const out = [P[0]];
+    for (let i = 1; i < P.length - 1; i++) {
+        const a = mid(P[i - 1], P[i]), b = mid(P[i], P[i + 1]);
+        for (let k = 0; k <= 4; k++) {
+            const t = k / 4, u = 1 - t;
+            out.push({
+                x: u * u * a.x + 2 * u * t * P[i].x + t * t * b.x,
+                y: u * u * a.y + 2 * u * t * P[i].y + t * t * b.y
+            });
+        }
+    }
+    out.push(P[P.length - 1]);
+    return out;
+}
+
+function drawSnake(t, now) {
+    const P = snake.map((s, i) => {
+        const p = prevSnake[i] || s;
+        return { x: (lerp(p.x, s.x, t) + 0.5) * CELL, y: (lerp(p.y, s.y, t) + 0.5) * CELL };
+    });
+    const path = smoothPath(P), m = path.length;
+    const widthAt = j => CELL * 0.8 * (1 - 0.62 * Math.pow(j / Math.max(m - 1, 1), 1.2));   // ekor meruncing
+
+    function pass(color, scale, dx = 0, dy = 0) {   // gambar badan ruas demi ruas dari ekor ke kepala
+        ctx.strokeStyle = color; ctx.lineCap = "round";
+        for (let j = m - 1; j > 0; j--) {
+            ctx.lineWidth = widthAt(j) * scale;
+            ctx.beginPath();
+            ctx.moveTo(path[j].x + dx, path[j].y + dy);
+            ctx.lineTo(path[j - 1].x + dx, path[j - 1].y + dy);
+            ctx.stroke();
+        }
+    }
+    if (m > 1) {
+        pass("rgba(0,0,0,0.3)", 1, 2, 3);   // bayangan
+        pass("#15803d", 1);                  // badan
+        pass("#22c55e", 0.7);                // sisi terang
+        pass("#86efac", 0.25);               // perut/garis tengah
+        ctx.fillStyle = "rgba(20,83,45,0.65)";   // motif sisik
+        for (let j = 3; j < m - 2; j += 5) {
+            ctx.beginPath(); ctx.arc(path[j].x, path[j].y, widthAt(j) * 0.17, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+
+    // Kepala
+    const h = P[0];
+    const angle = P.length > 1 ? Math.atan2(P[0].y - P[1].y, P[0].x - P[1].x) : ANGLE[direction || "right"];
+    ctx.save();
+    ctx.translate(h.x, h.y); ctx.rotate(angle);
+    if (!gameOver && !paused && started() && Math.sin(now / 120) > 0.3) {   // lidah menjulur
+        ctx.strokeStyle = "#ef4444"; ctx.lineWidth = 1.5; ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(CELL * 0.55, 0); ctx.lineTo(CELL * 0.95, 0);
+        ctx.moveTo(CELL * 0.95, 0); ctx.lineTo(CELL * 1.2, -CELL * 0.14);
+        ctx.moveTo(CELL * 0.95, 0); ctx.lineTo(CELL * 1.2, CELL * 0.14);
+        ctx.stroke();
+    }
+    ctx.fillStyle = "#15803d";
+    ctx.beginPath(); ctx.ellipse(CELL * 0.08, 0, CELL * 0.62, CELL * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#22c55e";
+    ctx.beginPath(); ctx.ellipse(CELL * 0.1, 0, CELL * 0.5, CELL * 0.36, 0, 0, Math.PI * 2); ctx.fill();
+    for (const side of [-1, 1]) {   // mata
+        ctx.fillStyle = "white";
+        ctx.beginPath(); ctx.arc(CELL * 0.22, side * CELL * 0.24, CELL * 0.15, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = gameOver ? "#991b1b" : "black";
+        ctx.beginPath(); ctx.arc(CELL * 0.27, side * CELL * 0.24, CELL * 0.075, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+}
+
+// ==== SKOR & GAME OVER ====
 function updateScoreText() {
     document.getElementById("score").innerText = "Skor: " + score + "  |  Terbaik: " + highScore;
-}
-
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Gambar makanan
-    ctx.fillStyle = "#f87171";
-    ctx.fillRect(food.x * box, food.y * box, box - 1, box - 1);
-
-    // Gambar ular
-    snake.forEach((segment, index) => {
-        ctx.fillStyle = index === 0 ? "#4ade80" : "#22c55e";
-        ctx.fillRect(segment.x * box, segment.y * box, box - 1, box - 1);
-    });
-
-    if (paused) {
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "white";
-        ctx.font = "24px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText("Dijeda", canvas.width / 2, canvas.height / 2);
-    }
-
-    if (gameOver) {
-        ctx.fillStyle = "rgba(0,0,0,0.6)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "white";
-        ctx.font = "24px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText("Game Over!", canvas.width / 2, canvas.height / 2 - 10);
-        ctx.font = "16px Arial";
-        ctx.fillText(isTouch ? "Ketuk Main Lagi di bawah" : "Tekan Spasi untuk main lagi", canvas.width / 2, canvas.height / 2 + 20);
-    }
 }
 
 function endGame() {
     gameOver = true;
     document.getElementById("status").innerText = "Game selesai dengan skor " + score;
-    draw(); // tampilkan layar Game Over sebelum prompt muncul
-    if (score === 0) return; // skor 0 tidak perlu masuk leaderboard
-
-    // setTimeout memberi browser waktu menggambar layar Game Over dulu
+    if (score === 0) return;   // skor 0 tidak perlu masuk leaderboard
+    // Beri waktu browser menggambar layar Game Over dulu sebelum kotak nama muncul
     setTimeout(() => {
         const name = prompt("Game Over! Masukkan nama kamu untuk leaderboard:", "Player");
-        if (name === null) return; // tekan Batal = jangan simpan
+        if (name === null) return;
         submitScore(name.trim().slice(0, 20) || "Anonim", score);
-    }, 50);
+    }, 100);
+}
+
+function restartGame() {
+    resetState();
+    updateScoreText();
+    document.getElementById("status").innerText = START_HINT;
 }
 
 // ==== LEADERBOARD (Fetch API ke server Go) ====
-
 async function submitScore(playerName, finalScore) {
     try {
         const res = await fetch("/api/score", {
@@ -303,7 +363,7 @@ async function submitScore(playerName, finalScore) {
     } catch (err) {
         console.error("Gagal simpan skor:", err);
     }
-    loadLeaderboard(); // refresh tampilan setelah skor tersimpan
+    loadLeaderboard();
 }
 
 async function loadLeaderboard() {
@@ -311,14 +371,11 @@ async function loadLeaderboard() {
     try {
         const res = await fetch("/api/leaderboard");
         const data = await res.json();
-
-        list.innerHTML = ""; // kosongkan dulu
-
+        list.innerHTML = "";
         if (!data || data.length === 0) {
             list.innerHTML = "<li>Belum ada skor.</li>";
             return;
         }
-
         data.forEach((entry) => {
             const li = document.createElement("li");
             li.textContent = entry.player_name + " — " + entry.score;
@@ -330,32 +387,12 @@ async function loadLeaderboard() {
     }
 }
 
-function restartGame() {
-    snake = [{ x: 10, y: 10 }];
-    direction = null;
-    nextDirection = null;
-    food = randomFoodPosition();
-    score = 0;
-    gameOver = false;
-    paused = false;
-    speed = BASE_SPEED;
-    updateScoreText();
-    document.getElementById("status").innerText = START_HINT;
-}
-
-// ==== GAME LOOP ====
-function tick() {
-    if (!paused) {
-        update();
-        draw();
-    }
-    setTimeout(tick, speed); // jadwalkan langkah berikutnya dengan speed terbaru
-}
-
-document.getElementById("status").innerText = START_HINT;
+// ==== MULAI ====
+resetState();
 updateScoreText();
-tick();
-loadLeaderboard(); // tampilkan leaderboard begitu halaman dibuka
+document.getElementById("status").innerText = START_HINT;
+loadLeaderboard();
+requestAnimationFrame(frame);
 </script>
 
 </body>
